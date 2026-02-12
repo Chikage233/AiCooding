@@ -1,0 +1,22 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django 项目
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# 虚拟环境
+venv/
+.env/
+
+# IDE 配置
+.idea/
+*.swp
+*.swo
+*~
