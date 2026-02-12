@@ -75,11 +75,17 @@ WSGI_APPLICATION = 'AiCooding.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',  # 数据库引擎，改为 PostgreSQL
+        'NAME': 'aicoding_db',                      # 你创建的数据库名
+        'USER': 'django_user',                      # 你创建的专用用户名
+        'PASSWORD': 'django123456',                     # 这里填你给 django_user 设置的密码
+        'HOST': '127.0.0.1',                        # 本地数据库地址
+        'PORT': '5432',                             # PostgreSQL 默认端口
+        'OPTIONS': {
+            'client_encoding': 'UTF8',              # 确保中文不乱码
+        }
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -122,15 +128,20 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ====================== Redis 缓存配置 ======================
+# ===================== Redis缓存配置（正确格式） =====================
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://:redis_2026@127.0.0.1:6379/0",
+        # 正确格式：redis://:密码@IP:端口/数据库编号
+        "LOCATION": "redis://:redis_2026@127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "CONNECT_TIMEOUT": 5,
-            "SOCKET_TIMEOUT": 5,
+            "CONNECTION_POOL_KWARGS": {"max_connections": 100},
+            "DECODE_RESPONSES": True,  # 自动解码，避免bytes类型
         }
     }
 }
+
+# Celery的Redis配置（同样修正格式）
+CELERY_BROKER_URL = "redis://:redis_2026@127.0.0.1:6379/2"
+CELERY_RESULT_BACKEND = "redis://:redis_2026@127.0.0.1:6379/2"
