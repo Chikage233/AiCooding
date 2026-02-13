@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'api',
 ]
 
 MIDDLEWARE = [
@@ -76,9 +78,9 @@ WSGI_APPLICATION = 'AiCooding.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',  # 数据库引擎，改为 PostgreSQL
-        'NAME': 'aicoding_db',                      # 你创建的数据库名
-        'USER': 'django_user',                      # 你创建的专用用户名
-        'PASSWORD': 'django123456',                     # 这里填你给 django_user 设置的密码
+        'NAME': 'ai_teaching_db',                      # 你创建的数据库名
+        'USER': 'ai_user',                      # 你创建的专用用户名
+        'PASSWORD': '123456',                     # 这里填你给 django_user 设置的密码
         'HOST': '127.0.0.1',                        # 本地数据库地址
         'PORT': '5432',                             # PostgreSQL 默认端口
         'OPTIONS': {
