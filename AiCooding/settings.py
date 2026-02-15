@@ -147,3 +147,20 @@ CACHES = {
 # Celery的Redis配置（同样修正格式）
 CELERY_BROKER_URL = "redis://:redis_2026@127.0.0.1:6379/2"
 CELERY_RESULT_BACKEND = "redis://:redis_2026@127.0.0.1:6379/2"
+
+# REST Framework 配置
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}
+
+# 自定义用户模型
+AUTH_USER_MODEL = 'api.CustomUser'
