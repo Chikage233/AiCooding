@@ -2,290 +2,227 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.authtoken.models import Token  # 重要：添加这行
 from django.contrib.auth import login, logout
 from .serializers import (UserRegisterSerializer, UserLoginSerializer,
-                         UserInfoSerializer, UserRoleUpdateSerializer)
-from .models import CustomUser
+                         UserInfoSerializer, UserRoleUpdateSerializer,
+                         LeetCodeProblemSerializer, LeetCodeProblemListSerializer)
+from .models import CustomUser, LeetCodeProblem, ProblemTag
+from django.db.models import Count, Q
 from django.core.cache import cache
 from django.conf import settings
+from django.utils import timezone
 import json
 import hashlib
-# 必须完整导入 DRF 的 APIView 和 Response
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.authtoken.models import Token
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from django.contrib.auth import login, logout
-from django.core.cache import cache
-from django.conf import settings
-import json
-import hashlib
-from .serializers import (UserRegisterSerializer, UserLoginSerializer,
-                         UserInfoSerializer, UserRoleUpdateSerializer)
-from .models import CustomUser
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+# JWT相关导入
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework import serializers
+
+# 自定义JWT序列化器
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # 添加自定义声明
+        token['username'] = user.username
+        token['email'] = user.email
+        token['role'] = user.role
+
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # 添加用户信息到响应中
+        user = self.user
+        data['user'] = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'role': user.role,
+            'role_display': user.get_role_display(),
+            'is_active': user.is_active
+        }
+        return data
+
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """支持邮箱登录的JWT序列化器"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 修改字段名为email而不是username
+        self.fields['email'] = serializers.EmailField()
+        # 删除原来的username字段
+        if 'username' in self.fields:
+            del self.fields['username']
+
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # 添加自定义声明
+        token['username'] = user.username
+        token['email'] = user.email
+        token['role'] = user.role
+        return token
+
+    def validate(self, attrs):
+        # 直接使用email进行认证，不转换字段名
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        if email and password:
+            # 使用Django的authenticate函数进行认证
+            from django.contrib.auth import authenticate
+            user = authenticate(email=email, password=password)
+
+            if not user:
+                from rest_framework.exceptions import AuthenticationFailed
+                raise AuthenticationFailed('邮箱或密码错误')
+
+            # 设置用户对象
+            self.user = user
+
+            # 生成token数据
+            data = {}
+            refresh = self.get_token(user)
+            data['refresh'] = str(refresh)
+            data['access'] = str(refresh.access_token)
+
+            # 添加用户信息到响应中
+            data['user'] = {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'role': user.role,
+                'role_display': user.get_role_display(),
+                'is_active': user.is_active
+            }
+
+            return data
+        else:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('请提供邮箱和密码')
+
+
+# 自定义JWT登录视图
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = EmailTokenObtainPairSerializer  # 使用支持邮箱的序列化器
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            response.data = {
+                'code': 200,
+                'message': '登录成功',
+                'data': response.data
+            }
+        else:
+            response.data = {
+                'code': 401,
+                'message': '登录失败',
+                'data': response.data
+            }
+        return response
+
+
+# JWT刷新令牌视图
+class CustomTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            response.data = {
+                'code': 200,
+                'message': '令牌刷新成功',
+                'data': response.data
+            }
+        else:
+            response.data = {
+                'code': 401,
+                'message': '令牌刷新失败',
+                'data': response.data
+            }
+        return response
+
+# 获取当前用户信息视图
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            'code': 200,
+            'message': '获取用户信息成功',
+            'data': {
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'phone': user.phone,
+                    'avatar': user.avatar,
+                    'role': user.role,
+                    'role_display': user.get_role_display(),
+                    'department': user.department,
+                    'date_joined': user.date_joined,
+                    'is_active': user.is_active,
+                    'last_login': user.last_login
+                }
+            },
+            'timestamp': timezone.now().isoformat()
+        })
+
+# 用户登出视图（JWT版本）
+class JWTLogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # 将refresh token加入黑名单
+            refresh_token = request.data.get("refresh")
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+        except Exception:
+            pass
+
+        return Response({
+            'code': 200,
+            'message': '登出成功',
+            'data': {}
+        })
 
 # 保留原有的测试接口
 class TestView(APIView):
     # 处理 GET 请求，方法名必须是 get（小写）
     def get(self, request):
-        # 返回和前端匹配的格式，无语法错误
+        # 返回 JSON 响应
         return Response({
             "code": 200,
-            "msg": "接口调用成功！",
-            "data": {"name": "AI编程辅导系统", "version": "1.0.0"}
-        })
-
-# 用户注册接口
-class RegisterView(APIView):
-    def post(self, request):
-        serializer = UserRegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            # 创建token
-            token, created = Token.objects.get_or_create(user=user)
-            return Response({
-                "code": 200,
-                "msg": "注册成功",
-                "data": {
-                    "token": token.key,
-                    "user": UserInfoSerializer(user).data
-                }
-            }, status=status.HTTP_201_CREATED)
-        return Response({
-            "code": 400,
-            "msg": "注册失败",
-            "data": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-# 用户登录接口
-class LoginView(APIView):
-    def post(self, request):
-        serializer = UserLoginSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            login(request, user)
-            # 获取或创建token
-            token, created = Token.objects.get_or_create(user=user)
-            return Response({
-                "code": 200,
-                "msg": "登录成功",
-                "data": {
-                    "token": token.key,
-                    "user": UserInfoSerializer(user).data
-                }
-            })
-        return Response({
-            "code": 400,
-            "msg": "登录失败",
-            "data": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-# 用户登出接口
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        # 删除用户的token
-        try:
-            request.user.auth_token.delete()
-        except:
-            pass
-        logout(request)
-        return Response({
-            "code": 200,
-            "msg": "登出成功",
-            "data": {}
-        })
-
-# 获取用户信息接口（带缓存优化）
-class UserInfoView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # 生成缓存键
-        cache_key = f"user_info_{request.user.id}"
-
-        # 尝试从缓存获取
-        cached_data = cache.get(cache_key)
-        if cached_data:
-            return Response({
-                "code": 200,
-                "msg": "获取用户信息成功（缓存）",
-                "data": json.loads(cached_data)
-            })
-
-        # 缓存未命中，从数据库获取
-        serializer = UserInfoSerializer(request.user)
-        response_data = serializer.data
-
-        # 存入缓存（设置过期时间）
-        cache.set(cache_key, json.dumps(response_data), timeout=300)  # 5分钟缓存
-
-        return Response({
-            "code": 200,
-            "msg": "获取用户信息成功",
-            "data": response_data
-        })
-
-# 清除用户缓存接口
-class ClearUserCacheView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        cache_key = f"user_info_{request.user.id}"
-        cache.delete(cache_key)
-        return Response({
-            "code": 200,
-            "msg": "用户缓存清除成功",
-            "data": {}
-        })
-
-# 管理员：获取所有用户列表
-class UserListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # 检查是否为管理员
-        if not request.user.is_administrator():
-            return Response({
-                "code": 403,
-                "msg": "权限不足，只有管理员可以访问",
-                "data": {}
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        # 获取查询参数
-        role = request.GET.get('role', None)
-        department = request.GET.get('department', None)
-        page = int(request.GET.get('page', 1))
-        page_size = int(request.GET.get('page_size', 20))
-
-        # 过滤用户
-        users = CustomUser.objects.all()
-        if role:
-            users = users.filter(role=role)
-        if department:
-            users = users.filter(department=department)
-
-        # 分页处理
-        total = users.count()
-        start = (page - 1) * page_size
-        end = start + page_size
-        users_page = users[start:end]
-
-        serializer = UserInfoSerializer(users_page, many=True)
-        return Response({
-            "code": 200,
-            "msg": "获取用户列表成功",
+            "msg": "hello world!",
             "data": {
-                "users": serializer.data,
-                "pagination": {
-                    "current_page": page,
-                    "page_size": page_size,
-                    "total": total,
-                    "total_pages": (total + page_size - 1) // page_size
-                }
-            }
-        })
-
-# 管理员：批量更新用户状态
-class BatchUserUpdateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def put(self, request):
-        # 检查是否为管理员
-        if not request.user.is_administrator():
-            return Response({
-                "code": 403,
-                "msg": "权限不足，只有管理员可以批量操作",
-                "data": {}
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        user_ids = request.data.get('user_ids', [])
-        action = request.data.get('action', '')  # 'activate', 'deactivate', 'delete'
-
-        if not user_ids or not action:
-            return Response({
-                "code": 400,
-                "msg": "请提供用户ID列表和操作类型",
-                "data": {}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        users = CustomUser.objects.filter(id__in=user_ids)
-        affected_count = 0
-
-        if action == 'activate':
-            affected_count = users.update(is_active=True)
-        elif action == 'deactivate':
-            affected_count = users.update(is_active=False)
-        elif action == 'delete':
-            affected_count = users.delete()[0]
-
-        # 清除相关缓存
-        for user_id in user_ids:
-            cache_key = f"user_info_{user_id}"
-            cache.delete(cache_key)
-
-        return Response({
-            "code": 200,
-            "msg": f"批量操作成功，影响 {affected_count} 个用户",
-            "data": {"affected_count": affected_count}
-        })
-
-# 获取系统健康状态（监控接口）
-class SystemHealthView(APIView):
-    def get(self, request):
-        # 检查数据库连接
-        try:
-            db_status = "healthy" if CustomUser.objects.first() is not None else "unhealthy"
-        except Exception:
-            db_status = "unhealthy"
-
-        # 检查Redis连接
-        try:
-            cache.set("health_check", "ok", timeout=1)
-            redis_status = "healthy" if cache.get("health_check") == "ok" else "unhealthy"
-        except Exception:
-            redis_status = "unhealthy"
-
-        return Response({
-            "code": 200,
-            "msg": "系统健康检查",
-            "data": {
-                "database": db_status,
-                "redis_cache": redis_status,
+                "method": "GET",
                 "timestamp": timezone.now().isoformat()
             }
         })
 
-
-# 保留原有的测试接口
-class TestView(APIView):
-    # 处理 GET 请求，方法名必须是 get（小写）
-    def get(self, request):
-        # 返回和前端匹配的格式，无语法错误
-        return Response({
-            "code": 200,
-            "msg": "接口调用成功！",
-            "data": {"name": "AI编程辅导系统", "version": "1.0.0"}
-        })
-
-# 用户注册接口
+# 用户注册视图
 class RegisterView(APIView):
     def post(self, request):
         serializer = UserRegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            # 创建token
-            token, created = Token.objects.get_or_create(user=user)
             return Response({
-                "code": 200,
+                "code": 201,
                 "msg": "注册成功",
                 "data": {
-                    "token": token.key,
-                    "user": UserInfoSerializer(user).data
+                    "user_id": user.id,
+                    "username": user.username,
+                    "email": user.email
                 }
             }, status=status.HTTP_201_CREATED)
         return Response({
@@ -294,21 +231,29 @@ class RegisterView(APIView):
             "data": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-# 用户登录接口
+# 用户登录视图（保持原有逻辑）
 class LoginView(APIView):
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data['user']
             login(request, user)
-            # 获取或创建token
+
+            # 生成或获取token
             token, created = Token.objects.get_or_create(user=user)
+
             return Response({
                 "code": 200,
                 "msg": "登录成功",
                 "data": {
                     "token": token.key,
-                    "user": UserInfoSerializer(user).data
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "role": user.role,
+                        "role_display": user.get_role_display()
+                    }
                 }
             })
         return Response({
@@ -317,16 +262,11 @@ class LoginView(APIView):
             "data": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-# 用户登出接口
+# 用户登出视图
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # 删除用户的token
-        try:
-            request.user.auth_token.delete()
-        except:
-            pass
         logout(request)
         return Response({
             "code": 200,
@@ -334,77 +274,12 @@ class LogoutView(APIView):
             "data": {}
         })
 
-
-# ... existing code ...
-
-# 获取用户信息接口（带缓存优化）
-class UserInfoView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # 生成缓存键
-        cache_key = f"user_info_{request.user.id}"
-
-        # 尝试从缓存获取
-        cached_data = cache.get(cache_key)
-        if cached_data:
-            return Response({
-                "code": 200,
-                "msg": "获取用户信息成功（缓存）",
-                "data": json.loads(cached_data)
-            })
-
-        # 缓存未命中，从数据库获取
-        serializer = UserInfoSerializer(request.user)
-        response_data = serializer.data
-
-        # 存入缓存（设置过期时间）
-        cache.set(cache_key, json.dumps(response_data), timeout=300)  # 5分钟缓存
-
-        return Response({
-            "code": 200,
-            "msg": "获取用户信息成功",
-            "data": response_data
-        })
-
-
-# 清除用户缓存接口
-class ClearUserCacheView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        cache_key = f"user_info_{request.user.id}"
-        cache.delete(cache_key)
-        return Response({
-            "code": 200,
-            "msg": "用户缓存清除成功",
-            "data": {}
-        })
-
-# 管理员：获取所有用户列表
+# 用户列表视图（仅管理员可访问）
 class UserListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
-        # 检查是否为管理员
-        if not request.user.is_administrator():
-            return Response({
-                "code": 403,
-                "msg": "权限不足，只有管理员可以访问",
-                "data": {}
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        # 获取查询参数
-        role = request.GET.get('role', None)
-        department = request.GET.get('department', None)
-
-        # 过滤用户
         users = CustomUser.objects.all()
-        if role:
-            users = users.filter(role=role)
-        if department:
-            users = users.filter(department=department)
-
         serializer = UserInfoSerializer(users, many=True)
         return Response({
             "code": 200,
@@ -412,21 +287,27 @@ class UserListView(APIView):
             "data": serializer.data
         })
 
-# 管理员：更新用户角色
-class UserRoleUpdateView(APIView):
+# 用户详情视图
+class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def put(self, request, user_id):
-        # 检查是否为管理员
-        if not request.user.is_administrator():
-            return Response({
-                "code": 403,
-                "msg": "权限不足，只有管理员可以修改用户角色",
-                "data": {}
-            }, status=status.HTTP_403_FORBIDDEN)
-
+    def get(self, request, pk):
         try:
-            user = CustomUser.objects.get(id=user_id)
+            user = CustomUser.objects.get(pk=pk)
+            # 普通用户只能查看自己的信息，管理员可以查看所有用户
+            if request.user != user and not request.user.is_administrator():
+                return Response({
+                    "code": 403,
+                    "msg": "权限不足",
+                    "data": {}
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            serializer = UserInfoSerializer(user)
+            return Response({
+                "code": 200,
+                "msg": "获取用户信息成功",
+                "data": serializer.data
+            })
         except CustomUser.DoesNotExist:
             return Response({
                 "code": 404,
@@ -434,38 +315,42 @@ class UserRoleUpdateView(APIView):
                 "data": {}
             }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = UserRoleUpdateSerializer(user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({
-                "code": 200,
-                "msg": "用户角色更新成功",
-                "data": UserInfoSerializer(user).data
-            })
-        return Response({
-            "code": 400,
-            "msg": "更新失败",
-            "data": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+# 更新用户角色视图（仅管理员）
+class UserRoleUpdateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
-# 获取角色统计信息（管理员专用）
-class RoleStatisticsView(APIView):
-    permission_classes = [IsAuthenticated]
+    def patch(self, request, pk):
+        try:
+            user = CustomUser.objects.get(pk=pk)
+            serializer = UserRoleUpdateSerializer(user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    "code": 200,
+                    "msg": "用户角色更新成功",
+                    "data": serializer.data
+                })
+            return Response({
+                "code": 400,
+                "msg": "更新失败",
+                "data": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except CustomUser.DoesNotExist:
+            return Response({
+                "code": 404,
+                "msg": "用户不存在",
+                "data": {}
+            }, status=status.HTTP_404_NOT_FOUND)
+
+# 统计用户角色分布视图
+class UserStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
-        # 检查是否为管理员
-        if not request.user.is_administrator():
-            return Response({
-                "code": 403,
-                "msg": "权限不足，只有管理员可以访问",
-                "data": {}
-            }, status=status.HTTP_403_FORBIDDEN)
-
         # 统计各角色用户数量
         stats = {
             'total_users': CustomUser.objects.count(),
-            'students': CustomUser.objects.filter(role='student').count(),
-            'teachers': CustomUser.objects.filter(role='teacher').count(),
+            'users': CustomUser.objects.filter(role='user').count(),
             'administrators': CustomUser.objects.filter(role='admin').count(),
         }
 
@@ -473,5 +358,131 @@ class RoleStatisticsView(APIView):
             "code": 200,
             "msg": "获取角色统计成功",
             "data": stats
+        })
+
+
+# ==================== LeetCode 相关视图 ====================
+
+class LeetCodeProblemListView(APIView):
+    """LeetCode题目列表视图"""
+
+    def get(self, request):
+        # 获取查询参数
+        difficulty = request.query_params.get('difficulty')
+        is_premium = request.query_params.get('is_premium')
+        search = request.query_params.get('search')
+
+        # 构建查询集
+        queryset = LeetCodeProblem.objects.all()
+
+        # 过滤条件
+        if difficulty:
+            queryset = queryset.filter(difficulty=difficulty)
+
+        if is_premium is not None:
+            is_premium_bool = is_premium.lower() == 'true'
+            queryset = queryset.filter(is_premium=is_premium_bool)
+
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) |
+                Q(content__icontains=search)
+            )
+
+        # 分页
+        page = request.query_params.get('page', 1)
+        page_size = request.query_params.get('page_size', 20)
+
+        try:
+            page = int(page)
+            page_size = int(page_size)
+            page_size = min(page_size, 100)  # 限制最大页面大小
+        except (ValueError, TypeError):
+            page = 1
+            page_size = 20
+
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        total_count = queryset.count()
+        problems = queryset[start:end]
+
+        serializer = LeetCodeProblemListSerializer(problems, many=True)
+
+        return Response({
+            'code': 200,
+            'message': '获取题目列表成功',
+            'data': {
+                'problems': serializer.data,
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': (total_count + page_size - 1) // page_size
+                }
+            }
+        })
+
+
+class LeetCodeProblemDetailView(APIView):
+    """LeetCode题目详情视图"""
+
+    def get(self, request, problem_id):
+        try:
+            problem = LeetCodeProblem.objects.get(problem_id=problem_id)
+            serializer = LeetCodeProblemSerializer(problem)
+
+            return Response({
+                'code': 200,
+                'message': '获取题目详情成功',
+                'data': serializer.data
+            })
+        except LeetCodeProblem.DoesNotExist:
+            return Response({
+                'code': 404,
+                'message': '题目不存在',
+                'data': {}
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class LeetCodeProblemStatsView(APIView):
+    """LeetCode题目统计视图"""
+
+    def get(self, request):
+        total_problems = LeetCodeProblem.objects.count()
+        easy_count = LeetCodeProblem.objects.filter(difficulty='easy').count()
+        medium_count = LeetCodeProblem.objects.filter(difficulty='medium').count()
+        hard_count = LeetCodeProblem.objects.filter(difficulty='hard').count()
+        premium_count = LeetCodeProblem.objects.filter(is_premium=True).count()
+
+        # 获取热门标签
+        popular_tags = ProblemTag.objects.annotate(
+            problem_count=Count('leetcodeproblem')
+        ).filter(problem_count__gt=0).order_by('-problem_count')[:10]
+
+        tag_stats = [
+            {
+                'name': tag.name,
+                'slug': tag.slug,
+                'count': tag.problem_count
+            }
+            for tag in popular_tags
+        ]
+
+        stats = {
+            'total_problems': total_problems,
+            'difficulty_distribution': {
+                'easy': easy_count,
+                'medium': medium_count,
+                'hard': hard_count
+            },
+            'premium_problems': premium_count,
+            'popular_tags': tag_stats
+        }
+
+        return Response({
+            'code': 200,
+            'message': '获取统计信息成功',
+            'data': stats
         })
 
