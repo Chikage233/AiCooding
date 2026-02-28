@@ -94,10 +94,11 @@ class ProblemTagSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'slug', 'created_at')
 
 
+
 class LeetCodeProblemSerializer(serializers.ModelSerializer):
     """LeetCode题目序列化器"""
     difficulty_display = serializers.CharField(source='get_difficulty_display', read_only=True)
-    tags_detail = ProblemTagSerializer(many=True, read_only=True, source='tags')
+    # 删除有问题的tags_detail字段
     url = serializers.CharField(read_only=True)
 
     class Meta:
@@ -105,8 +106,9 @@ class LeetCodeProblemSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'problem_id', 'title', 'title_slug', 'difficulty', 'difficulty_display',
             'is_premium', 'content', 'acceptance_rate', 'submission_count', 'accepted_count',
-            'tags', 'tags_detail', 'url', 'created_at', 'updated_at'
+            'tags', 'url', 'created_at', 'updated_at'
         )
+
 
 
 class LeetCodeProblemListSerializer(serializers.ModelSerializer):

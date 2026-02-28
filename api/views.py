@@ -396,7 +396,7 @@ class LeetCodeProblemListView(APIView):
         try:
             page = int(page)
             page_size = int(page_size)
-            page_size = min(page_size, 100)  # 限制最大页面大小
+            page_size = min(page_size, 500)  # 限制最大页面大小
         except (ValueError, TypeError):
             page = 1
             page_size = 20
@@ -405,7 +405,7 @@ class LeetCodeProblemListView(APIView):
         end = start + page_size
 
         total_count = queryset.count()
-        problems = queryset[start:end]
+        problems = queryset
 
         serializer = LeetCodeProblemListSerializer(problems, many=True)
 

@@ -43,53 +43,69 @@ class LeetCodeScraper:
 
 
     def get_problems_list(self, limit: int = 200) -> List[Dict]:
-        """获取LeetCode题目列表"""
-        # 使用已验证的工作查询
-        query = """
-        query getProblems($limit: Int) {
-            problemsetQuestionList(limit: $limit) {
-                questions {
-                    frontendQuestionId
-                    title
-                    titleSlug
-                    difficulty
-                    acRate
-                    paidOnly
-                    status
-                    topicTags {
-                        name
-                        slug
-                        nameTranslated
+        """获取LeetCode题目列表（支持分页）"""
+        all_problems = []
+        skip = 0
+        page_size = 100  # 每页获取100道题目
+        
+        while len(all_problems) < limit:
+            current_limit = min(page_size, limit - len(all_problems))
+            
+            # 使用已验证的工作查询，添加skip参数
+            query = """
+            query getProblems($limit: Int, $skip: Int) {
+                problemsetQuestionList(limit: $limit, skip: $skip) {
+                    questions {
+                        frontendQuestionId
+                        title
+                        titleSlug
+                        difficulty
+                        acRate
+                        paidOnly
+                        status
+                        topicTags {
+                            name
+                            slug
+                            nameTranslated
+                        }
                     }
                 }
             }
-        }
-        """
-
-        variables = {
-            "categorySlug": "",
-            "limit": limit
-        }
-
-        try:
-            response = self.session.post(
-                self.graphql_url,
-                json={"query": query, "variables": variables}
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            if 'errors' in data:
-                logger.error(f"GraphQL错误: {data['errors']}")
-                return []
-
-            problems = data['data']['problemsetQuestionList']['questions']
-            logger.info(f"成功获取 {len(problems)} 道题目")
-            return problems
-
-        except Exception as e:
-            logger.error(f"获取题目列表失败: {e}")
-            return []
+            """
+            
+            variables = {
+                "limit": current_limit,
+                "skip": skip
+            }
+            
+            try:
+                logger.info(f"获取第 {skip+1}-{skip+current_limit} 道题目...")
+                response = self.session.post(
+                    self.graphql_url,
+                    json={"query": query, "variables": variables}
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if 'errors' in data:
+                    logger.error(f"GraphQL错误: {data['errors']}")
+                    break
+                
+                problems = data['data']['problemsetQuestionList']['questions']
+                if not problems:  # 没有更多数据了
+                    break
+                    
+                all_problems.extend(problems)
+                logger.info(f"本次获取 {len(problems)} 道题目，累计 {len(all_problems)} 道")
+                
+                skip += current_limit
+                time.sleep(1)  # 避免请求过于频繁
+                
+            except Exception as e:
+                logger.error(f"获取题目失败: {e}")
+                break
+        
+        return all_problems[:limit]  # 确保不超过限制数量
 
     def get_problem_detail(self, title_slug: str) -> Optional[Dict]:
         """获取单个题目的详细信息"""
