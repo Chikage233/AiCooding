@@ -4,7 +4,8 @@ from .views import (TestView, RegisterView, LoginView, LogoutView,
                     UserListView, UserRoleUpdateView,UserDetailView,
                     UserStatsView, CustomTokenObtainPairView, CustomTokenRefreshView,
                     CurrentUserView, JWTLogoutView,
-                    LeetCodeProblemListView, LeetCodeProblemDetailView, LeetCodeProblemStatsView)
+                    LeetCodeProblemListView, LeetCodeProblemDetailView, LeetCodeProblemStatsView,
+                    UserActivitiesView, ProblemCompletionsView)
 
 # URL 规则列表
 urlpatterns = [
@@ -27,11 +28,15 @@ urlpatterns = [
     path('admin/users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),  # 用户详情
     path('admin/users/<int:pk>/role/', UserRoleUpdateView.as_view(), name='user-role-update'),  # 更新用户角色
     path('admin/statistics/users/', UserStatsView.as_view(), name='user-stats'),  # 用户统计
+    path('admin/activities/', UserActivitiesView.as_view(), name='user-activities'),  # 用户活动记录
 
 
     # LeetCode题目接口
     path('leetcode/problems/', LeetCodeProblemListView.as_view(), name='leetcode-problem-list'),  # 题目列表
     path('leetcode/problems/<int:problem_id>/', LeetCodeProblemDetailView.as_view(), name='leetcode-problem-detail'),  # 题目详情
     path('leetcode/stats/', LeetCodeProblemStatsView.as_view(), name='leetcode-stats'),  # 题目统计
+    
+    # 用户题目完成状态接口
+    path('user/completions/', ProblemCompletionsView.as_view(), name='problem-completions'),  # 题目完成状态
 ]
 

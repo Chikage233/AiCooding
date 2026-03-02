@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 # Create your models here.
 class CustomUser(AbstractUser):
@@ -17,7 +18,10 @@ class CustomUser(AbstractUser):
     department = models.CharField(max_length=100, blank=True, null=True, verbose_name='部门')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
-
+    
+    # 添加is_staff字段以匹配前端判断逻辑
+    is_staff = models.BooleanField(default=False, help_text='Designates whether the user can log into this admin site.', verbose_name='staff status')
+    
     USERNAME_FIELD = 'email'  # 使用邮箱作为登录字段
     REQUIRED_FIELDS = ['username']  # 创建超级用户时必需的字段
 
@@ -28,6 +32,14 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return f"{self.email} ({self.get_role_display()})"
+
+    def save(self, *args, **kwargs):
+        # 当角色为admin时，自动设置is_staff为True
+        if self.role == 'admin':
+            self.is_staff = True
+        else:
+            self.is_staff = False
+        super().save(*args, **kwargs)
 
     def is_user(self):
         return self.role == 'user'
@@ -95,3 +107,76 @@ class ProblemTag(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class UserActivity(models.Model):
+    """用户活跃度追踪模型"""
+    ACTIVITY_TYPES = (
+        ('login', '登录'),
+        ('view_problem', '查看题目'),
+        ('submit_solution', '提交解答'),
+        ('complete_problem', '完成题目'),
+        ('profile_update', '更新资料'),
+    )
+    
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name='用户')
+    activity_type = models.CharField(max_length=20, choices=ACTIVITY_TYPES, verbose_name='活动类型')
+    problem = models.ForeignKey(LeetCodeProblem, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='相关题目')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name='IP地址')
+    user_agent = models.TextField(blank=True, verbose_name='用户代理')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='活动时间')
+    
+    class Meta:
+        db_table = 'user_activity'
+        verbose_name = '用户活动'
+        verbose_name_plural = '用户活动记录'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['activity_type', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.get_activity_type_display()} - {self.created_at}"
+
+
+class ProblemCompletion(models.Model):
+    """题目完成状态模型"""
+    COMPLETION_STATUS = (
+        ('not_started', '未开始'),
+        ('in_progress', '进行中'),
+        ('completed', '已完成'),
+        ('failed', '失败'),
+    )
+    
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name='用户')
+    problem = models.ForeignKey(LeetCodeProblem, on_delete=models.CASCADE, verbose_name='题目')
+    status = models.CharField(max_length=15, choices=COMPLETION_STATUS, default='not_started', verbose_name='完成状态')
+    attempts = models.IntegerField(default=0, verbose_name='尝试次数')
+    last_attempted = models.DateTimeField(null=True, blank=True, verbose_name='最后尝试时间')
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name='完成时间')
+    solution_code = models.TextField(blank=True, verbose_name='解决方案代码')
+    notes = models.TextField(blank=True, verbose_name='笔记')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    
+    class Meta:
+        db_table = 'problem_completion'
+        verbose_name = '题目完成状态'
+        verbose_name_plural = '题目完成状态记录'
+        unique_together = ['user', 'problem']
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['problem', 'status']),
+            models.Index(fields=['user', '-completed_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.problem.title} - {self.get_status_display()}"
+    
+    def save(self, *args, **kwargs):
+        # 自动更新完成时间
+        if self.status == 'completed' and not self.completed_at:
+            self.completed_at = timezone.now()
+        super().save(*args, **kwargs)

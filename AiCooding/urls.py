@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include  # 新增 include
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    # 新增：把所有请求转发到 api 应用的 urls.py 处理
+    # 先包含API URLs，避免与admin URL冲突
     path('', include('api.urls')),
+    path('django-admin/', admin.site.urls),  # 修改Django admin路径
 ]
