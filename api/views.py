@@ -86,28 +86,27 @@ class UsernameEmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         # 获取账号和密码
         username = attrs.get('username')
         password = attrs.get('password')
-        
+            
         if username and password:
-            # 支持邮箱或用户名登录
-            user = None
-            if '@' in username:  # 如果包含@，认为是邮箱
-                user = authenticate(email=username, password=password)
-            else:  # 否则是用户名
-                user = authenticate(username=username, password=password)
-                
+            # 由于 CustomUser 设置了 USERNAME_FIELD = 'email'
+            # Django 的 authenticate 会自动使用 email 字段进行认证
+            # 所以无论传入的是邮箱还是用户名，都传递给 username 参数
+            # authenticate 内部会根据 USERNAME_FIELD 来处理
+            user = authenticate(username=username, password=password)
+                    
             if not user:
                 from rest_framework.exceptions import AuthenticationFailed
                 raise AuthenticationFailed('账号或密码错误')
-            
+                
             # 设置用户对象
             self.user = user
-            
-            # 生成token数据
+                
+            # 生成 token 数据
             data = {}
             refresh = self.get_token(user)
             data['refresh'] = str(refresh)
             data['access'] = str(refresh.access_token)
-            
+                
             # 添加用户信息到响应中，匹配前端需要的字段
             data['user'] = {
                 'id': user.id,
@@ -119,7 +118,7 @@ class UsernameEmailTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'is_staff': user.is_staff,  # 前端需要的字段
                 'is_admin': user.role == 'admin'  # 前端需要的字段
             }
-            
+                
             return data
         else:
             from rest_framework.exceptions import ValidationError
@@ -185,25 +184,27 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise ValidationError('请提供邮箱和密码')
 
 
-# 自定义JWT登录视图
+# 自定义 JWT 登录视图
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = UsernameEmailTokenObtainPairSerializer  # 使用支持用户名/邮箱混合登录的序列化器
 
     def post(self, request, *args, **kwargs):
+        # 先调用父类方法获取响应
         response = super().post(request, *args, **kwargs)
+        
+        # 根据状态码包装响应数据
         if response.status_code == 200:
-            response.data = {
+            return Response({
                 'code': 200,
                 'message': '登录成功',
                 'data': response.data
-            }
+            })
         else:
-            response.data = {
+            return Response({
                 'code': 401,
-                'message': '登录失败',
+                'message': '账号或密码错误',
                 'data': response.data
-            }
-        return response
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 # JWT刷新令牌视图
@@ -308,29 +309,38 @@ class RegisterView(APIView):
             "data": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-# 用户登录视图（保持原有逻辑）
+# 用户登录视图（JWT 版本 - 匹配前端格式）
 class LoginView(APIView):
+    """
+    用户登录接口
+    路径：/api/user/login/
+    方法：POST
+    参数：username (邮箱), password
+    返回：{code, message, data: {token, user_id, username}}
+    """
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data['user']
             login(request, user)
 
-            # 生成或获取token
-            token, created = Token.objects.get_or_create(user=user)
+            # 生成 JWT token (使用 access token 作为主要 token)
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
 
             return Response({
                 "code": 200,
                 "msg": "登录成功",
                 "data": {
-                    "token": token.key,
-                    "user": {
-                        "id": user.id,
-                        "username": user.username,
-                        "email": user.email,
-                        "role": user.role,
-                        "role_display": user.get_role_display()
-                    }
+                    "token": access_token,  # 前端期望的字段名
+                    "user_id": user.id,     # 前端期望的字段
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role,
+                    "role_display": user.get_role_display(),
+                    # 额外信息
+                    "refresh_token": str(refresh)  # 也提供 refresh token
                 }
             })
         return Response({
@@ -821,3 +831,70 @@ class ProblemCompletionsView(APIView):
                 'data': serializer.data
             })
 
+
+# 验证码相关视图
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import SendVerificationCodeSerializer, VerifyCodeSerializer, UserRegisterWithCodeSerializer
+from .models import EmailVerificationCode
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class SendVerificationCodeView(APIView):
+    """发送邮箱验证码视图"""
+    def post(self, request):
+        serializer = SendVerificationCodeSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({
+                "code": 200,
+                "msg": "验证码发送成功",
+                "data": result
+            })
+        return Response({
+            "code": 400,
+            "msg": "验证码发送失败",
+            "data": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class VerifyCodeView(APIView):
+    """验证邮箱验证码视图"""
+    def post(self, request):
+        serializer = VerifyCodeSerializer(data=request.data)
+        if serializer.is_valid():
+            return Response({
+                "code": 200,
+                "msg": "验证码验证成功",
+                "data": {"email": serializer.validated_data['email']}
+            })
+        return Response({
+            "code": 400,
+            "msg": "验证码验证失败",
+            "data": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RegisterWithCodeView(APIView):
+    """带验证码的用户注册视图"""
+    def post(self, request):
+        serializer = UserRegisterWithCodeSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "code": 201,
+                "msg": "注册成功",
+                "data": {
+                    "user_id": user.id,
+                    "username": user.username,
+                    "email": user.email
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            "code": 400,
+            "msg": "注册失败",
+            "data": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)

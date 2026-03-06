@@ -180,3 +180,47 @@ class ProblemCompletion(models.Model):
         if self.status == 'completed' and not self.completed_at:
             self.completed_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+# 邮箱验证码模型
+class EmailVerificationCode(models.Model):
+    """邮箱验证码模型"""
+    email = models.EmailField(max_length=254, verbose_name='邮箱')
+    code = models.CharField(max_length=6, verbose_name='验证码')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    expires_at = models.DateTimeField(verbose_name='过期时间')
+    is_used = models.BooleanField(default=False, verbose_name='是否已使用')
+    
+    class Meta:
+        verbose_name = '邮箱验证码'
+        verbose_name_plural = '邮箱验证码'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f'{self.email} - {self.code}'
+    
+    @classmethod
+    def generate_code(cls, email):
+        """生成验证码"""
+        # 生成6位数字验证码
+        import random
+        import string
+        code = ''.join(random.choices(string.digits, k=6))
+        
+        # 设置过期时间为5分钟
+        from django.utils import timezone
+        expires_at = timezone.now() + timezone.timedelta(minutes=5)
+        
+        # 创建验证码记录
+        verification_code = cls.objects.create(
+            email=email,
+            code=code,
+            expires_at=expires_at
+        )
+        
+        return verification_code
+    
+    def is_valid(self):
+        """检查验证码是否有效"""
+        from django.utils import timezone
+        return not self.is_used and timezone.now() < self.expires_at
