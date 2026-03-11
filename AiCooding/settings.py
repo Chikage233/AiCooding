@@ -39,10 +39,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'corsheaders',  # 添加 CORS 支持
     'api',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # CORS 中间件（必须在最前面）
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -231,4 +233,59 @@ JUDGE0_MEMORY_LIMIT = 128000  # 内存限制 (KB)
 JUDGE0_STACK_LIMIT = 64000  # 栈限制 (KB)
 JUDGE0_MAX_PROCESSES = 60  # 最大进程/线程数
 JUDGE0_WAIT_TIME = 3.0  # 默认等待时间 (秒)
+
+# ==================== Qwen AI 配置 ====================
+# 阿里云百炼 API Key
+QWEN_API_KEY = 'sk-15fa610390b140a8ac10ac7514c3f847'
+
+# API 基础 URL (阿里云百炼平台)
+QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
+
+# 默认使用的模型 (Qwen3.5-Plus)
+QWEN_DEFAULT_MODEL = 'qwen-plus'
+
+# 请求超时时间 (秒)
+QWEN_TIMEOUT = 30
+
+# 最大 Token 数
+QWEN_MAX_TOKENS = 2000
+
+# 温度参数 (0-2，越高越随机)
+QWEN_TEMPERATURE = 0.7
+
+# ==================== CORS 跨域配置 ====================
+# 允许所有来源访问（开发环境使用）
+CORS_ALLOW_ALL_ORIGINS = True
+
+# 生产环境应该指定具体的域名
+# CORS_ALLOWED_ORIGINS = [
+#     'http://localhost:5173',
+#     'http://127.0.0.1:5173',
+# ]
+
+# 允许携带 cookie/认证信息
+CORS_ALLOW_CREDENTIALS = True
+
+# 允许的 HTTP 方法
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# 允许的 HTTP 头
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 # ... existing code ...

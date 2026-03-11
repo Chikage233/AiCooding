@@ -18,6 +18,8 @@ from .judge0_views import (
     Judge0HealthCheckView,
     Judge0QuickRunView
 )
+# 导入 Qwen AI 相关视图
+from .qwen_views import QwenChatView, QwenCodeHelpView, QwenTranslateView
 
 # URL 规则列表
 urlpatterns = [
@@ -71,4 +73,12 @@ urlpatterns = [
     path('judge0/health/', Judge0HealthCheckView.as_view(), name='judge0-health'),
     # 快速运行代码 (简化版)
     path('judge0/run/', Judge0QuickRunView.as_view(), name='judge0-quick-run'),
+    
+    # ==================== Qwen AI 接口 ====================
+    # AI 聊天对话
+    path('ai/chat/', QwenChatView.as_view(), name='qwen-chat'),
+    # AI 代码助手（解释、调试、生成）
+    path('ai/code-help/', QwenCodeHelpView.as_view(), name='qwen-code-help'),
+    # AI 翻译
+    path('ai/translate/', QwenTranslateView.as_view(), name='qwen-translate'),
 ]
