@@ -18,6 +18,9 @@ from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from datetime import timedelta
 import json
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 # JWT相关导入
@@ -231,6 +234,31 @@ class CurrentUserView(APIView):
 
     def get(self, request):
         user = request.user
+        
+        # 获取用户做题统计
+        total_completed = ProblemCompletion.objects.filter(
+            user=user,
+            status='completed'
+        ).count()
+        
+        completed_easy = ProblemCompletion.objects.filter(
+            user=user,
+            status='completed',
+            problem__difficulty='easy'
+        ).count()
+        
+        completed_medium = ProblemCompletion.objects.filter(
+            user=user,
+            status='completed',
+            problem__difficulty='medium'
+        ).count()
+        
+        completed_hard = ProblemCompletion.objects.filter(
+            user=user,
+            status='completed',
+            problem__difficulty='hard'
+        ).count()
+        
         return Response({
             'code': 200,
             'message': '获取用户信息成功',
@@ -245,10 +273,16 @@ class CurrentUserView(APIView):
                     'role_display': user.get_role_display(),
                     'department': user.department,
                     'date_joined': user.date_joined,
-                    'is_active': user.is_active,
                     'last_login': user.last_login,
-                    'is_staff': user.is_staff,  # 前端需要的字段
-                    'is_admin': user.role == 'admin'  # 前端需要的字段
+                    'is_active': user.is_active,
+                    'is_staff': user.is_staff,
+                    'is_admin': user.role == 'admin'
+                },
+                'stats': {
+                    'problems_completed': total_completed,
+                    'problems_completed_easy': completed_easy,
+                    'problems_completed_medium': completed_medium,
+                    'problems_completed_hard': completed_hard
                 }
             },
             'timestamp': timezone.now().isoformat()
@@ -451,7 +485,7 @@ class UserStatsView(APIView):
 # ==================== LeetCode 相关视图 ====================
 
 class LeetCodeProblemListView(APIView):
-    """LeetCode题目列表视图"""
+    """LeetCode 题目列表视图"""
 
     def get(self, request):
         # 获取查询参数
@@ -483,7 +517,7 @@ class LeetCodeProblemListView(APIView):
         try:
             page = int(page)
             page_size = int(page_size)
-            page_size = min(page_size, 500)  # 限制最大页面大小
+            page_size = min(page_size, 100)  # 限制最大页面大小为 100，避免数据量过大
         except (ValueError, TypeError):
             page = 1
             page_size = 20
@@ -492,9 +526,34 @@ class LeetCodeProblemListView(APIView):
         end = start + page_size
 
         total_count = queryset.count()
-        problems = queryset
 
-        serializer = LeetCodeProblemListSerializer(problems, many=True)
+        # 只获取需要的字段，减少数据传输
+        problems = queryset.only(
+            'id', 'problem_id', 'title', 'title_slug', 'difficulty',
+            'is_premium', 'acceptance_rate', 'tags'
+        )[start:end]
+
+        # 如果是认证用户，预加载完成状态以避免 N+1 查询
+        if request.user.is_authenticated:
+            # 获取当前用户的 ID
+            user_id = request.user.id
+            # 预先获取这批题目的完成状态
+            completions = ProblemCompletion.objects.filter(
+                user_id=user_id,
+                problem_id__in=[p.id for p in problems]
+            )
+            # 创建映射字典
+            completion_map = {c.problem_id: c for c in completions}
+
+            # 为每个问题附加完成状态（临时属性）
+            for problem in problems:
+                completion = completion_map.get(problem.id)
+                problem._cached_completion = completion
+        else:
+            for problem in problems:
+                problem._cached_completion = None
+
+        serializer = LeetCodeProblemListSerializer(problems, many=True, context={'request': request})
 
         return Response({
             'code': 200,
@@ -775,36 +834,56 @@ class ProblemCompletionsView(APIView):
                 }
             }
         })
+    
+    def post(self, request):
+        """更新题目完成状态"""
+        problem_id = request.data.get('problem_id')
+        completion_status = request.data.get('status', 'completed')  # 默认为 completed
+        solution_code = request.data.get('solution_code', '')
+        notes = request.data.get('notes', '')
         
-        def post(self, request):
-            """更新题目完成状态"""
-            problem_id = request.data.get('problem_id')
-            status = request.data.get('status')
-            solution_code = request.data.get('solution_code', '')
-            notes = request.data.get('notes', '')
-            
-            if not problem_id or not status:
-                return Response({
-                    'code': 400,
-                    'message': '请提供题目ID和状态',
-                    'data': {}
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            try:
-                problem = LeetCodeProblem.objects.get(id=problem_id)
-            except LeetCodeProblem.DoesNotExist:
-                return Response({
-                    'code': 404,
-                    'message': '题目不存在',
-                    'data': {}
-                }, status=status.HTTP_404_NOT_FOUND)
-            
+        logger.info(f"收到更新题目完成状态请求：problem_id={problem_id}, status={completion_status}, user={request.user}")
+        
+        if not problem_id:
+            logger.warning(f"参数缺失：problem_id={problem_id}")
+            return Response({
+                'code': 400,
+                'message': '请提供题目 ID',
+                'data': {}
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 验证 status 的有效性
+        valid_statuses = ['not_started', 'in_progress', 'completed', 'failed']
+        if completion_status not in valid_statuses:
+            logger.warning(f"无效的状态值：{completion_status}，使用默认值 'completed'")
+            completion_status = 'completed'
+        
+        try:
+            # 使用 problem_id 字段（LeetCode 题目 ID）而不是主键 id
+            problem = LeetCodeProblem.objects.get(problem_id=problem_id)
+            logger.info(f"找到题目：{problem.title}")
+        except LeetCodeProblem.DoesNotExist:
+            logger.error(f"题目不存在：problem_id={problem_id}")
+            return Response({
+                'code': 404,
+                'message': '题目不存在',
+                'data': {}
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"查询题目时发生异常：{e}")
+            return Response({
+                'code': 500,
+                'message': f'查询题目时出错：{str(e)}',
+                'data': {}
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        try:
             # 获取或创建完成记录
             completion, created = ProblemCompletion.objects.get_or_create(
                 user=request.user,
                 problem=problem,
                 defaults={
-                    'status': status,
+                    'status': completion_status,
                     'attempts': 1,
                     'last_attempted': timezone.now(),
                     'solution_code': solution_code,
@@ -812,9 +891,12 @@ class ProblemCompletionsView(APIView):
                 }
             )
             
-            if not created:
+            if created:
+                logger.info(f"创建新的完成记录：completion_id={completion.id}")
+            else:
+                logger.info(f"更新现有完成记录：completion_id={completion.id}")
                 # 更新现有记录
-                completion.status = status
+                completion.status = completion_status
                 completion.attempts += 1
                 completion.last_attempted = timezone.now()
                 if solution_code:
@@ -824,12 +906,21 @@ class ProblemCompletionsView(APIView):
                 completion.save()
             
             serializer = ProblemCompletionSerializer(completion)
+            logger.info(f"序列化完成数据成功")
             
             return Response({
                 'code': 200,
                 'message': '更新题目完成状态成功',
                 'data': serializer.data
             })
+            
+        except Exception as e:
+            logger.error(f"更新题目完成状态时发生异常：{e}", exc_info=True)
+            return Response({
+                'code': 500,
+                'message': f'更新题目完成状态时出错：{str(e)}',
+                'data': {}
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # 验证码相关视图
@@ -898,3 +989,70 @@ class RegisterWithCodeView(APIView):
             "msg": "注册失败",
             "data": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DebugProblemCompletionsView(APIView):
+    """调试用的题目完成状态视图 - 用于查看详细请求数据"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """记录所有请求详情"""
+        logger.error("=" * 80)
+        logger.error("🔍 收到 POST 请求 - 详细调试信息")
+        logger.error("=" * 80)
+        
+        # 1. 记录请求头
+        logger.error(f"📋 请求头:")
+        for key, value in request.headers.items():
+            logger.error(f"   {key}: {value}")
+        
+        # 2. 记录请求体类型和内容
+        logger.error(f"\n📦 请求体类型：{type(request.data)}")
+        logger.error(f"📦 原始请求体内容：{request.data}")
+        
+        # 3. 尝试获取字段
+        logger.error(f"\n🔍 尝试获取字段:")
+        problem_id = request.data.get('problem_id')
+        status_field = request.data.get('status')
+        solution_code = request.data.get('solution_code')
+        notes = request.data.get('notes')
+        
+        logger.error(f"   problem_id: {problem_id} (类型：{type(problem_id)})")
+        logger.error(f"   status: {status_field} (类型：{type(status_field)})")
+        logger.error(f"   solution_code: {solution_code} (类型：{type(solution_code)})")
+        logger.error(f"   notes: {notes} (类型：{type(notes)})")
+        
+        # 4. 如果是 dict，记录所有键
+        if isinstance(request.data, dict):
+            logger.error(f"\n🔑 请求体的所有键：{list(request.data.keys())}")
+        
+        # 5. 用户信息
+        logger.error(f"\n👤 用户信息:")
+        logger.error(f"   user: {request.user}")
+        logger.error(f"   user.id: {request.user.id}")
+        logger.error(f"   user.username: {request.user.username}")
+        
+        logger.error("=" * 80)
+        
+        # 返回调试信息给前端
+        return Response({
+            'code': 200,
+            'message': '调试信息已记录到服务器日志',
+            'data': {
+                'request_headers': dict(request.headers),
+                'request_data_type': str(type(request.data)),
+                'request_data': str(request.data),
+                'extracted_fields': {
+                    'problem_id': problem_id,
+                    'problem_id_type': str(type(problem_id)) if problem_id is not None else None,
+                    'status': status_field,
+                    'status_type': str(type(status_field)) if status_field is not None else None,
+                    'solution_code': solution_code,
+                    'notes': notes,
+                },
+                'user_info': {
+                    'id': request.user.id,
+                    'username': request.user.username,
+                }
+            }
+        })

@@ -137,23 +137,33 @@ class LeetCodeProblemSerializer(serializers.ModelSerializer):
 
 
 
+# ... existing code ...
+
 class LeetCodeProblemListSerializer(serializers.ModelSerializer):
-    """LeetCode题目列表序列化器（简化版）"""
+    """LeetCode 题目列表序列化器（简化版）"""
     difficulty_display = serializers.CharField(source='get_difficulty_display', read_only=True)
     url = serializers.CharField(read_only=True)
     # 添加用户完成状态字段
     completion_status = serializers.SerializerMethodField()
     user_attempts = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = LeetCodeProblem
         fields = (
             'id', 'problem_id', 'title', 'title_slug', 'difficulty', 'difficulty_display',
             'is_premium', 'acceptance_rate', 'tags', 'url', 'completion_status', 'user_attempts'
         )
-    
+
     def get_completion_status(self, obj):
         """获取当前用户的题目完成状态"""
+        # 使用预加载的完成状态
+        if hasattr(obj, '_cached_completion'):
+            completion = obj._cached_completion
+            if completion:
+                return completion.get_status_display()
+            return '未开始'
+
+        # 降级处理（不应该是主要路径）
         request = self.context.get('request')
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             try:
@@ -162,9 +172,17 @@ class LeetCodeProblemListSerializer(serializers.ModelSerializer):
             except ProblemCompletion.DoesNotExist:
                 return '未开始'
         return '未登录'
-    
+
     def get_user_attempts(self, obj):
         """获取当前用户的尝试次数"""
+        # 使用预加载的完成状态
+        if hasattr(obj, '_cached_completion'):
+            completion = obj._cached_completion
+            if completion:
+                return completion.attempts
+            return 0
+
+        # 降级处理（不应该是主要路径）
         request = self.context.get('request')
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             try:
@@ -173,6 +191,9 @@ class LeetCodeProblemListSerializer(serializers.ModelSerializer):
             except ProblemCompletion.DoesNotExist:
                 return 0
         return 0
+
+# ... existing code ...
+
 
 
 class UserStatsSerializer(serializers.Serializer):

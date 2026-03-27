@@ -8,6 +8,8 @@ from .views import (TestView, RegisterView, LoginView, LogoutView,
                     UserActivitiesView, ProblemCompletionsView,
                     # 添加验证码相关视图
                     SendVerificationCodeView, VerifyCodeView, RegisterWithCodeView)
+# 导入调试视图
+from .views import DebugProblemCompletionsView
 # 导入 Judge0 相关视图
 from .judge0_views import (
     Judge0LanguagesView,
@@ -20,6 +22,8 @@ from .judge0_views import (
 )
 # 导入 Qwen AI 相关视图
 from .qwen_views import QwenChatView, QwenCodeHelpView, QwenTranslateView
+# 导入 AI 判题相关视图
+from .ai_judge_views import AIJudgeSubmitView, submit_and_complete_problem
 
 # URL 规则列表
 urlpatterns = [
@@ -57,6 +61,8 @@ urlpatterns = [
     
     # 用户题目完成状态接口
     path('user/completions/', ProblemCompletionsView.as_view(), name='problem-completions'),  # 题目完成状态
+    # 调试接口（临时使用）
+    path('debug/user/completions/', DebugProblemCompletionsView.as_view(), name='debug-problem-completions'),
     
     # ==================== Judge0 代码判题接口 ====================
     # 获取支持的编程语言列表
@@ -81,4 +87,10 @@ urlpatterns = [
     path('ai/code-help/', QwenCodeHelpView.as_view(), name='qwen-code-help'),
     # AI 翻译
     path('ai/translate/', QwenTranslateView.as_view(), name='qwen-translate'),
+    
+    # ==================== AI 判题接口 ====================
+    # AI 判题提交（标准接口）
+    path('ai/judge/submit/', AIJudgeSubmitView.as_view(), name='ai-judge-submit'),
+    # 一体化判题接口（推荐）
+    path('ai/judge/submit-and-complete/', submit_and_complete_problem, name='ai-judge-submit-complete'),
 ]

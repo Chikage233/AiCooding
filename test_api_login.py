@@ -3,65 +3,102 @@
 """
 import requests
 import json
+import pytest
 
 # 测试数据
-test_cases = [
-    {
-        'name': '使用邮箱登录',
-        'data': {
+BASE_URL = 'http://127.0.0.1:8000/api/user/login/'
+
+
+class TestLoginAPI:
+    """登录接口测试类"""
+
+    def test_login_with_email_success(self):
+        """测试用例 1: 使用邮箱登录成功"""
+        # 准备测试数据
+        login_data = {
             'username': 'test@example.com',
             'password': 'testpass123'
         }
-    }
-]
 
-url = 'http://127.0.0.1:8000/api/user/login/'
+        # 发送请求
+        response = requests.post(BASE_URL, json=login_data)
 
-print("=" * 60)
-print("测试 /api/user/login/ 接口 (前端期望的格式)")
-print("=" * 60)
+        # 断言响应状态码
+        assert response.status_code == 200, f"期望状态码 200，实际 {response.status_code}"
 
-for test in test_cases:
-    print(f"\n{test['name']}:")
-    print(f"请求 URL: {url}")
-    print(f"请求数据：{json.dumps(test['data'], ensure_ascii=False)}")
-    
-    try:
-        response = requests.post(url, json=test['data'])
-        print(f"状态码：{response.status_code}")
-        
+        # 解析响应
+        result = response.json()
+
+        # 断言响应结构
+        assert 'code' in result, "响应缺少 code 字段"
+        assert 'data' in result, "响应缺少 data 字段"
+        assert 'msg' in result, "响应缺少 msg 字段"
+
+        # 断言 data 中的关键字段
+        data = result['data']
+        assert 'token' in data, "data 缺少 token 字段"
+        assert 'user_id' in data, "data 缺少 user_id 字段"
+        assert 'username' in data, "data 缺少 username 字段"
+        assert 'email' in data, "data 缺少 email 字段"
+        assert 'role' in data, "data 缺少 role 字段"
+
+        # 断言 token 不为空
+        assert len(data['token']) > 0, "token 为空"
+
+        # 打印详细信息（使用 -s 参数时可见）
+        print(f"\n✅ 登录成功!")
+        print(f"   用户 ID: {data['user_id']}")
+        print(f"   用户名：{data['username']}")
+        print(f"   邮  箱：{data['email']}")
+        print(f"   角  色：{data['role']}")
+        print(f"   Token(前 50 字符): {data['token'][:50]}...")
+
+    @pytest.mark.parametrize("username,password,description", [
+        ("test@example.com", "wrong_password", "密码错误"),
+        ("", "testpass123", "用户名为空"),
+        ("test@example.com", "", "密码为空"),
+        ("nonexistent@example.com", "testpass123", "用户不存在"),
+    ])
+    def test_login_failure_cases(self, username, password, description):
+        """测试用例 2-5: 各种登录失败场景（参数化）"""
+        login_data = {
+            'username': username,
+            'password': password
+        }
+
+        response = requests.post(BASE_URL, json=login_data)
+
+        # 失败情况应该返回非 200 状态码
+        assert response.status_code != 200, f"{description}: 期望失败，但返回了 200"
+
+        print(f"\n❌ {description}: 正确返回错误状态码 {response.status_code}")
+
+    def test_login_response_format(self):
+        """测试用例 6: 验证响应格式完全匹配前端期望"""
+        login_data = {
+            'username': 'test@example.com',
+            'password': 'testpass123'
+        }
+
+        response = requests.post(BASE_URL, json=login_data)
+
         if response.status_code == 200:
-            print("✅ 登录成功!")
             result = response.json()
-            print(f"\n响应结构:")
-            print(f"  code: {result.get('code')}")
-            print(f"  msg: {result.get('msg')}")
-            print(f"\n  data.token: {result.get('data', {}).get('token', '')[:50]}...")
-            print(f"  data.user_id: {result.get('data', {}).get('user_id')}")
-            print(f"  data.username: {result.get('data', {}).get('username')}")
-            print(f"  data.email: {result.get('data', {}).get('email')}")
-            print(f"  data.role: {result.get('data', {}).get('role')}")
-            print(f"  data.refresh_token: {result.get('data', {}).get('refresh_token', '')[:50]}...")
-            
-            # 验证响应格式是否匹配前端期望
-            print("\n✅ 响应格式检查:")
-            has_token = 'token' in result.get('data', {})
-            has_user_id = 'user_id' in result.get('data', {})
-            has_username = 'username' in result.get('data', {})
-            
-            print(f"  ✓ 包含 token 字段：{has_token}")
-            print(f"  ✓ 包含 user_id 字段：{has_user_id}")
-            print(f"  ✓ 包含 username 字段：{has_username}")
-            
-            if has_token and has_user_id and has_username:
-                print("\n🎉 响应格式完全匹配前端期望!")
-            else:
-                print("\n⚠️  响应格式与前端期望不完全匹配")
-                
-        else:
-            print(f"❌ 登录失败")
-            print(f"响应：{response.text}")
-    except Exception as e:
-        print(f"❌ 请求异常：{e}")
+            data = result.get('data', {})
 
-print("\n" + "=" * 60)
+            # 检查前端必需的所有字段
+            required_fields = ['token', 'user_id', 'username', 'email', 'role', 'refresh_token']
+            for field in required_fields:
+                assert field in data, f"前端必需字段 '{field}' 缺失"
+
+            print("\n🎉 响应格式完全匹配前端期望!")
+            print(f"   所有必需字段都存在：{', '.join(required_fields)}")
+        else:
+            # 如果登录失败，跳过格式检查
+            pytest.skip(f"登录失败 (状态码 {response.status_code})，无法验证响应格式")
+
+
+if __name__ == '__main__':
+    # 可以直接运行：python test_api_login.py
+    # 或使用 pytest: pytest test_api_login.py -v
+    pytest.main([__file__, '-v', '-s'])
