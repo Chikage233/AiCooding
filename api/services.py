@@ -122,41 +122,31 @@ class AIJudgeService:
             cached_result = None
         
         # 4. 构建 AI 判题 Prompt
-        prompt = f"""你是一位专业的编程老师，现在要对学生的代码进行严格判题，遵循 PF 教学策略，不直接给修正代码，而是引导学生自主思考。
+        prompt = f"""你是一位专业的编程老师，现在要对学生的代码进行严格判题，遵循PF教学策略，不直接给修正代码，而是引导学生自主思考。
 
 【题目名称】
 {problem.title}
 
 【题目描述】
-{problem.content[:2000]}  # 限制长度避免超出 token
+{problem.content[:2000]}
 
 【学生提交的代码】
-```{language}
 {user_code}
-```
 
 请你严格按照以下要求判断：
-1. 先生成这道题的【标准答案思路】（不写完整代码）和【正确输出示例】；
+1. 先生成这道题的【标准答案思路】（不写完整代码）和【正确输出】；
 2. 再判断学生代码是否正确；
 3. 如果正确，返回：
-   {{
-     "correct": true,
-     "reason": "回答正确",
-     "standard_approach": "标准答案思路",
-     "expected_output": "正确输出示例"
-   }}
+   "correct": true,
+   "reason": "回答正确"
 4. 如果错误，返回：
-   {{
-     "correct": false,
-     "error_line": "错误位置（如第 5 行）",
-     "error_reason": "错误原因（简洁明了）",
-     "suggestion": "修改建议（不直接给代码）",
-     "guide_question": "苏格拉底式引导提问（如\"你认为循环的终止条件是否考虑了边界值？\"）",
-     "standard_approach": "标准答案思路",
-     "expected_output": "正确输出示例"
-   }}
+   "correct": false,
+   "error_line": "错误位置（如第5行）",
+   "error_reason": "错误原因（简洁明了）",
+   "suggestion": "修改建议（不直接给代码）",
+   "guide_question": "苏格拉底式引导提问（如“你认为循环的终止条件是否考虑了边界值？”）"
 
-只返回 JSON，不要多余文字。确保 JSON 格式正确。
+只返回JSON，不要多余文字。
 """
         
         # 5. 调用 AI 进行判题

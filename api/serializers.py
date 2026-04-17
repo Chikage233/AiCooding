@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate
 from django.utils import timezone
 from datetime import timedelta
 from .models import CustomUser, LeetCodeProblem, ProblemTag, UserActivity, ProblemCompletion
+from .avatar_presets import get_allowed_avatar_urls
 
 class UserRegisterSerializer(serializers.ModelSerializer):
     """用户注册序列化器"""
@@ -95,12 +96,57 @@ class UserLoginSerializer(serializers.Serializer):
 class UserInfoSerializer(serializers.ModelSerializer):
     """用户信息序列化器"""
     role_display = serializers.CharField(source='get_role_display', read_only=True)
+    display_name = serializers.CharField(read_only=True)
+    nickname_reviewed_by = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'email', 'phone', 'avatar', 'role', 'role_display',
-                 'department', 'date_joined', 'is_active')
+        fields = (
+            'id', 'username', 'email', 'phone', 'avatar', 'role', 'role_display',
+            'department', 'nickname', 'nickname_approved', 'nickname_candidate', 'nickname_status',
+            'nickname_reject_reason', 'nickname_reviewed_by', 'nickname_reviewed_at',
+            'display_name', 'bio', 'gender', 'birthday', 'date_joined', 'is_active'
+        )
         read_only_fields = ('id', 'date_joined', 'is_active')
+
+    def get_nickname_reviewed_by(self, obj):
+        if not obj.nickname_reviewed_by:
+            return None
+        return {
+            'id': obj.nickname_reviewed_by.id,
+            'username': obj.nickname_reviewed_by.username
+        }
+
+
+class CurrentUserUpdateSerializer(serializers.ModelSerializer):
+    """Current user profile update serializer."""
+
+    class Meta:
+        model = CustomUser
+        fields = ('username', 'phone', 'avatar', 'department', 'bio', 'gender', 'birthday')
+
+    def validate_avatar(self, value):
+        if value in (None, ""):
+            return value
+
+        if value not in get_allowed_avatar_urls():
+            raise serializers.ValidationError("头像必须从系统预置列表中选择")
+        return value
+
+
+class NicknameReviewListItemSerializer(serializers.ModelSerializer):
+    display_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = (
+            'id', 'username', 'email', 'display_name', 'nickname_approved', 'nickname_candidate',
+            'nickname_status', 'nickname_reject_reason', 'nickname_reviewed_at', 'updated_at'
+        )
+
+
+class NicknameReviewRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=True, max_length=255)
 
 class UserRoleUpdateSerializer(serializers.ModelSerializer):
     """用户角色更新序列化器（仅管理员可用）"""
@@ -226,6 +272,11 @@ class UserStatsSerializer(serializers.Serializer):
     total_problems = serializers.IntegerField(read_only=True)
     problems_completed_today = serializers.IntegerField(read_only=True)
     avg_completion_rate = serializers.FloatField(read_only=True)
+    problems_completed_total = serializers.IntegerField(read_only=True)
+    total_completed_problems = serializers.IntegerField(read_only=True)
+    problems_completed_easy = serializers.IntegerField(read_only=True)
+    problems_completed_medium = serializers.IntegerField(read_only=True)
+    problems_completed_hard = serializers.IntegerField(read_only=True)
 
 
 class UserActivitySerializer(serializers.ModelSerializer):

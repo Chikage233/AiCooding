@@ -3,7 +3,8 @@ from django.urls import path
 from .views import (TestView, RegisterView, LoginView, LogoutView,
                     UserListView, UserRoleUpdateView,UserDetailView,
                     UserStatsView, CustomTokenObtainPairView, CustomTokenRefreshView,
-                    CurrentUserView, JWTLogoutView,
+                    CurrentUserView, JWTLogoutView, LoginCaptchaView, AvatarPresetListView,
+                    NicknameReviewListView, NicknameReviewApproveView, NicknameReviewRejectView,
                     LeetCodeProblemListView, LeetCodeProblemDetailView, LeetCodeProblemStatsView,
                     UserActivitiesView, ProblemCompletionsView,
                     # 添加验证码相关视图
@@ -41,6 +42,8 @@ urlpatterns = [
     path('auth/jwt/refresh/', CustomTokenRefreshView.as_view(), name='jwt-refresh'),          # JWT刷新
     path('auth/jwt/logout/', JWTLogoutView.as_view(), name='jwt-logout'),                     # JWT登出
     path('auth/jwt/me/', CurrentUserView.as_view(), name='jwt-current-user'),                 # 获取当前用户
+    path('auth/jwt/avatar-presets/', AvatarPresetListView.as_view(), name='avatar-preset-list'),
+    path('auth/captcha/', LoginCaptchaView.as_view(), name='login-captcha'),
 
     # 验证码相关接口
     path('auth/send-verification-code/', SendVerificationCodeView.as_view(), name='send-verification-code'),
@@ -51,6 +54,12 @@ urlpatterns = [
     path('admin/users/', UserListView.as_view(), name='user-list'),       # 用户列表
     path('admin/users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),  # 用户详情
     path('admin/users/<int:pk>/role/', UserRoleUpdateView.as_view(), name='user-role-update'),  # 更新用户角色
+    path('admin/nickname-reviews', NicknameReviewListView.as_view(), name='nickname-review-list'),
+    path('admin/nickname-reviews/', NicknameReviewListView.as_view(), name='nickname-review-list-slash'),
+    path('admin/nickname-reviews/<int:user_id>/approve', NicknameReviewApproveView.as_view(), name='nickname-review-approve'),
+    path('admin/nickname-reviews/<int:user_id>/approve/', NicknameReviewApproveView.as_view(), name='nickname-review-approve-slash'),
+    path('admin/nickname-reviews/<int:user_id>/reject', NicknameReviewRejectView.as_view(), name='nickname-review-reject'),
+    path('admin/nickname-reviews/<int:user_id>/reject/', NicknameReviewRejectView.as_view(), name='nickname-review-reject-slash'),
     path('admin/statistics/users/', UserStatsView.as_view(), name='user-stats'),  # 用户统计
     path('admin/activities/', UserActivitiesView.as_view(), name='user-activities'),  # 用户活动记录
 
