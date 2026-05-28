@@ -268,6 +268,123 @@ class EmailVerificationCode(models.Model):
         return not self.is_used and timezone.now() < self.expires_at
 
 
+class HomeworkAssignment(models.Model):
+    """Homework assignment created by admins."""
+
+    title = models.CharField(max_length=200, verbose_name="title")
+    description = models.TextField(blank=True, default="", verbose_name="description")
+    created_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_homeworks",
+        verbose_name="created_by",
+    )
+    start_at = models.DateTimeField(default=timezone.now, verbose_name="start_at")
+    due_at = models.DateTimeField(verbose_name="due_at")
+    is_published = models.BooleanField(default=False, verbose_name="is_published")
+    allow_late_submission = models.BooleanField(default=False, verbose_name="allow_late_submission")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="created_at")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="updated_at")
+
+    class Meta:
+        db_table = "homework_assignment"
+        verbose_name = "homework_assignment"
+        verbose_name_plural = "homework_assignments"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["is_published", "due_at"]),
+            models.Index(fields=["start_at", "due_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.id})"
+
+
+class HomeworkProblem(models.Model):
+    """Problems included in a homework assignment."""
+
+    assignment = models.ForeignKey(
+        HomeworkAssignment,
+        on_delete=models.CASCADE,
+        related_name="homework_problems",
+        verbose_name="assignment",
+    )
+    problem = models.ForeignKey(
+        LeetCodeProblem,
+        on_delete=models.CASCADE,
+        related_name="homework_links",
+        verbose_name="problem",
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="order")
+    points = models.PositiveIntegerField(default=100, verbose_name="points")
+
+    class Meta:
+        db_table = "homework_problem"
+        verbose_name = "homework_problem"
+        verbose_name_plural = "homework_problems"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["assignment", "problem"], name="uq_homework_problem_assignment_problem")
+        ]
+        indexes = [
+            models.Index(fields=["assignment", "order"]),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment_id}:{self.problem_id}"
+
+
+class HomeworkSubmission(models.Model):
+    """Student submission for a homework assignment."""
+
+    STATUS_CHOICES = (
+        ("not_started", "not_started"),
+        ("in_progress", "in_progress"),
+        ("submitted", "submitted"),
+        ("late_submitted", "late_submitted"),
+    )
+
+    assignment = models.ForeignKey(
+        HomeworkAssignment,
+        on_delete=models.CASCADE,
+        related_name="submissions",
+        verbose_name="assignment",
+    )
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="homework_submissions",
+        verbose_name="user",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="not_started", verbose_name="status")
+    notes = models.TextField(blank=True, default="", verbose_name="notes")
+    submitted_at = models.DateTimeField(blank=True, null=True, verbose_name="submitted_at")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="created_at")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="updated_at")
+
+    class Meta:
+        db_table = "homework_submission"
+        verbose_name = "homework_submission"
+        verbose_name_plural = "homework_submissions"
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["assignment", "user"], name="uq_homework_submission_assignment_user")
+        ]
+        indexes = [
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["assignment", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment_id}:{self.user_id}:{self.status}"
+
+    def save(self, *args, **kwargs):
+        if self.status in {"submitted", "late_submitted"} and not self.submitted_at:
+            self.submitted_at = timezone.now()
+        super().save(*args, **kwargs)
+
+
 class NicknameReviewLog(models.Model):
     """Nickname validation/review audit log."""
 

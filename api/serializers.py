@@ -3,7 +3,16 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from datetime import timedelta
-from .models import CustomUser, LeetCodeProblem, ProblemTag, UserActivity, ProblemCompletion
+from .models import (
+    CustomUser,
+    HomeworkAssignment,
+    HomeworkProblem,
+    HomeworkSubmission,
+    LeetCodeProblem,
+    ProblemCompletion,
+    ProblemTag,
+    UserActivity,
+)
 from .avatar_presets import get_allowed_avatar_urls
 
 class UserRegisterSerializer(serializers.ModelSerializer):
@@ -317,6 +326,105 @@ class ProblemCompletionSerializer(serializers.ModelSerializer):
             'id', 'user_username', 'problem_title', 'status', 'status_display',
             'attempts', 'last_attempted', 'completed_at', 'difficulty',
             'created_at', 'updated_at'
+        )
+
+
+class HomeworkProblemInputSerializer(serializers.Serializer):
+    problem_id = serializers.IntegerField(required=True)
+    order = serializers.IntegerField(required=False, default=0, min_value=0)
+    points = serializers.IntegerField(required=False, default=100, min_value=1, max_value=1000)
+
+
+class HomeworkCreateUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(required=True, max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    start_at = serializers.DateTimeField(required=True)
+    due_at = serializers.DateTimeField(required=True)
+    is_published = serializers.BooleanField(required=False, default=False)
+    allow_late_submission = serializers.BooleanField(required=False, default=False)
+    problem_items = HomeworkProblemInputSerializer(many=True, required=True, min_length=1)
+
+    def validate(self, attrs):
+        if attrs["start_at"] >= attrs["due_at"]:
+            raise serializers.ValidationError("start_at must be earlier than due_at")
+
+        seen = set()
+        for item in attrs["problem_items"]:
+            pid = item["problem_id"]
+            if pid in seen:
+                raise serializers.ValidationError(f"duplicate problem_id in problem_items: {pid}")
+            seen.add(pid)
+        return attrs
+
+
+class HomeworkProblemSerializer(serializers.ModelSerializer):
+    problem_id = serializers.IntegerField(source="problem.problem_id", read_only=True)
+    title = serializers.CharField(source="problem.title", read_only=True)
+    difficulty = serializers.CharField(source="problem.difficulty", read_only=True)
+
+    class Meta:
+        model = HomeworkProblem
+        fields = ("problem_id", "title", "difficulty", "order", "points")
+
+
+class HomeworkAssignmentListSerializer(serializers.ModelSerializer):
+    problem_count = serializers.IntegerField(read_only=True)
+    submission_count = serializers.IntegerField(read_only=True)
+    created_by_name = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = HomeworkAssignment
+        fields = (
+            "id",
+            "title",
+            "description",
+            "start_at",
+            "due_at",
+            "is_published",
+            "allow_late_submission",
+            "problem_count",
+            "submission_count",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        )
+
+
+class HomeworkAssignmentDetailSerializer(serializers.ModelSerializer):
+    problem_items = HomeworkProblemSerializer(source="homework_problems", many=True, read_only=True)
+    created_by_name = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = HomeworkAssignment
+        fields = (
+            "id",
+            "title",
+            "description",
+            "start_at",
+            "due_at",
+            "is_published",
+            "allow_late_submission",
+            "created_by_name",
+            "problem_items",
+            "created_at",
+            "updated_at",
+        )
+
+
+class HomeworkSubmissionSerializer(serializers.ModelSerializer):
+    assignment_title = serializers.CharField(source="assignment.title", read_only=True)
+
+    class Meta:
+        model = HomeworkSubmission
+        fields = (
+            "id",
+            "assignment",
+            "assignment_title",
+            "status",
+            "notes",
+            "submitted_at",
+            "created_at",
+            "updated_at",
         )
 
 

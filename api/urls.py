@@ -10,6 +10,13 @@ from .judge0_views import (
     Judge0SubmitView,
     Judge0SystemInfoView,
 )
+from .homework_views import (
+    AdminHomeworkDetailView,
+    AdminHomeworkListCreateView,
+    UserHomeworkDetailView,
+    UserHomeworkListView,
+    UserHomeworkSubmitView,
+)
 from .personalized_views import PersonalizedExerciseGenerationView
 from .qwen_views import QwenChatView, QwenCodeHelpView, QwenTranslateView
 from .views import (
@@ -85,7 +92,14 @@ urlpatterns = [
     # User problem status
     path('user/completions/', ProblemCompletionsView.as_view(), name='problem-completions'),
     path('user/personalized-exercises/', PersonalizedExerciseGenerationView.as_view(), name='user-personalized-exercises'),
+    path('user/homeworks/', UserHomeworkListView.as_view(), name='user-homework-list'),
+    path('user/homeworks/<int:assignment_id>/', UserHomeworkDetailView.as_view(), name='user-homework-detail'),
+    path('user/homeworks/<int:assignment_id>/submit/', UserHomeworkSubmitView.as_view(), name='user-homework-submit'),
     path('debug/user/completions/', DebugProblemCompletionsView.as_view(), name='debug-problem-completions'),
+
+    # Admin homework
+    path('admin/homeworks/', AdminHomeworkListCreateView.as_view(), name='admin-homework-list-create'),
+    path('admin/homeworks/<int:assignment_id>/', AdminHomeworkDetailView.as_view(), name='admin-homework-detail'),
 
     # Judge0
     path('judge0/languages/', Judge0LanguagesView.as_view(), name='judge0-languages'),
