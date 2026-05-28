@@ -1,105 +1,107 @@
-# 必须导入 path 和自定义的 View
 from django.urls import path
-from .views import (TestView, RegisterView, LoginView, LogoutView,
-                    UserListView, UserRoleUpdateView,UserDetailView,
-                    UserStatsView, CustomTokenObtainPairView, CustomTokenRefreshView,
-                    CurrentUserView, JWTLogoutView, LoginCaptchaView, AvatarPresetListView,
-                    NicknameReviewListView, NicknameReviewApproveView, NicknameReviewRejectView,
-                    LeetCodeProblemListView, LeetCodeProblemDetailView, LeetCodeProblemStatsView,
-                    UserActivitiesView, ProblemCompletionsView,
-                    # 添加验证码相关视图
-                    SendVerificationCodeView, VerifyCodeView, RegisterWithCodeView)
-# 导入调试视图
-from .views import DebugProblemCompletionsView
-# 导入 Judge0 相关视图
-from .judge0_views import (
-    Judge0LanguagesView,
-    Judge0SubmitView,
-    Judge0BatchSubmitView,
-    Judge0SubmissionDetailView,
-    Judge0SystemInfoView,
-    Judge0HealthCheckView,
-    Judge0QuickRunView
-)
-# 导入 Qwen AI 相关视图
-from .qwen_views import QwenChatView, QwenCodeHelpView, QwenTranslateView
-# 导入 AI 判题相关视图
-from .ai_judge_views import AIJudgeSubmitView, submit_and_complete_problem
 
-# URL 规则列表
+from .ai_judge_views import AIJudgeSubmitView, submit_and_complete_problem
+from .judge0_views import (
+    Judge0BatchSubmitView,
+    Judge0HealthCheckView,
+    Judge0LanguagesView,
+    Judge0QuickRunView,
+    Judge0SubmissionDetailView,
+    Judge0SubmitView,
+    Judge0SystemInfoView,
+)
+from .personalized_views import PersonalizedExerciseGenerationView
+from .qwen_views import QwenChatView, QwenCodeHelpView, QwenTranslateView
+from .views import (
+    AvatarPresetListView,
+    CurrentUserView,
+    CustomTokenObtainPairView,
+    CustomTokenRefreshView,
+    DebugProblemCompletionsView,
+    JWTLogoutView,
+    LeetCodeProblemDetailView,
+    LeetCodeProblemListView,
+    LeetCodeProblemStatsView,
+    LoginCaptchaView,
+    LoginView,
+    LogoutView,
+    NicknameReviewApproveView,
+    NicknameReviewListView,
+    NicknameReviewRejectView,
+    ProblemCompletionsView,
+    RegisterView,
+    RegisterWithCodeView,
+    SendVerificationCodeView,
+    TestView,
+    UserActivitiesView,
+    UserDetailView,
+    UserListView,
+    UserRoleUpdateView,
+    UserStatsView,
+    VerifyCodeView,
+)
+
 urlpatterns = [
     path('test/', TestView.as_view(), name='test'),
-    # 传统认证接口（保持兼容性）
-    path('auth/register/', RegisterView.as_view(), name='register'),  # 添加$表示精确匹配
-    path('auth/login/', LoginView.as_view(), name='login'),              # 登录接口
-    path('auth/logout/', LogoutView.as_view(), name='logout'),            # 登出接口
-    
-    # 前端期望的登录接口路径 (兼容旧版)
-    path('api/user/login/', LoginView.as_view(), name='api-user-login'),  # 前端使用的登录接口
 
-    # JWT认证接口（推荐使用）
-    path('auth/jwt/login/', CustomTokenObtainPairView.as_view(), name='jwt-login'),# JWT登录
-    path('auth/jwt/refresh/', CustomTokenRefreshView.as_view(), name='jwt-refresh'),          # JWT刷新
-    path('auth/jwt/logout/', JWTLogoutView.as_view(), name='jwt-logout'),                     # JWT登出
-    path('auth/jwt/me/', CurrentUserView.as_view(), name='jwt-current-user'),                 # 获取当前用户
+    # Auth
+    path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/login/', LoginView.as_view(), name='login'),
+    path('auth/logout/', LogoutView.as_view(), name='logout'),
+    path('api/user/login/', LoginView.as_view(), name='api-user-login'),
+
+    # JWT
+    path('auth/jwt/login/', CustomTokenObtainPairView.as_view(), name='jwt-login'),
+    path('auth/jwt/refresh/', CustomTokenRefreshView.as_view(), name='jwt-refresh'),
+    path('auth/jwt/logout/', JWTLogoutView.as_view(), name='jwt-logout'),
+    path('auth/jwt/me/', CurrentUserView.as_view(), name='jwt-current-user'),
     path('auth/jwt/avatar-presets/', AvatarPresetListView.as_view(), name='avatar-preset-list'),
     path('auth/captcha/', LoginCaptchaView.as_view(), name='login-captcha'),
 
-    # 验证码相关接口
+    # Email verification
     path('auth/send-verification-code/', SendVerificationCodeView.as_view(), name='send-verification-code'),
     path('auth/verify-code/', VerifyCodeView.as_view(), name='verify-code'),
     path('auth/register-with-code/', RegisterWithCodeView.as_view(), name='register-with-code'),
 
-    # 管理员专用接口
-    path('admin/users/', UserListView.as_view(), name='user-list'),       # 用户列表
-    path('admin/users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),  # 用户详情
-    path('admin/users/<int:pk>/role/', UserRoleUpdateView.as_view(), name='user-role-update'),  # 更新用户角色
+    # Admin
+    path('admin/users/', UserListView.as_view(), name='user-list'),
+    path('admin/users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),
+    path('admin/users/<int:pk>/role/', UserRoleUpdateView.as_view(), name='user-role-update'),
     path('admin/nickname-reviews', NicknameReviewListView.as_view(), name='nickname-review-list'),
     path('admin/nickname-reviews/', NicknameReviewListView.as_view(), name='nickname-review-list-slash'),
     path('admin/nickname-reviews/<int:user_id>/approve', NicknameReviewApproveView.as_view(), name='nickname-review-approve'),
     path('admin/nickname-reviews/<int:user_id>/approve/', NicknameReviewApproveView.as_view(), name='nickname-review-approve-slash'),
     path('admin/nickname-reviews/<int:user_id>/reject', NicknameReviewRejectView.as_view(), name='nickname-review-reject'),
     path('admin/nickname-reviews/<int:user_id>/reject/', NicknameReviewRejectView.as_view(), name='nickname-review-reject-slash'),
-    path('admin/statistics/users/', UserStatsView.as_view(), name='user-stats'),  # 用户统计
-    path('admin/activities/', UserActivitiesView.as_view(), name='user-activities'),  # 用户活动记录
+    path('admin/statistics/users/', UserStatsView.as_view(), name='user-stats'),
+    path('admin/activities/', UserActivitiesView.as_view(), name='user-activities'),
 
-    # LeetCode题目接口
-    path('leetcode/problems/', LeetCodeProblemListView.as_view(), name='leetcode-problem-list'),  # 题目列表
-    path('leetcode/problems/<int:problem_id>/', LeetCodeProblemDetailView.as_view(), name='leetcode-problem-detail'),  # 题目详情
-    path('leetcode/stats/', LeetCodeProblemStatsView.as_view(), name='leetcode-stats'),  # 题目统计
-    
-    # 用户题目完成状态接口
-    path('user/completions/', ProblemCompletionsView.as_view(), name='problem-completions'),  # 题目完成状态
-    # 调试接口（临时使用）
+    # LeetCode
+    path('leetcode/problems/', LeetCodeProblemListView.as_view(), name='leetcode-problem-list'),
+    path('leetcode/problems/<int:problem_id>/', LeetCodeProblemDetailView.as_view(), name='leetcode-problem-detail'),
+    path('leetcode/stats/', LeetCodeProblemStatsView.as_view(), name='leetcode-stats'),
+    path('leetcode/personalized/', PersonalizedExerciseGenerationView.as_view(), name='leetcode-personalized-generation'),
+
+    # User problem status
+    path('user/completions/', ProblemCompletionsView.as_view(), name='problem-completions'),
+    path('user/personalized-exercises/', PersonalizedExerciseGenerationView.as_view(), name='user-personalized-exercises'),
     path('debug/user/completions/', DebugProblemCompletionsView.as_view(), name='debug-problem-completions'),
-    
-    # ==================== Judge0 代码判题接口 ====================
-    # 获取支持的编程语言列表
+
+    # Judge0
     path('judge0/languages/', Judge0LanguagesView.as_view(), name='judge0-languages'),
-    # 提交代码执行 (完整参数版本)
     path('judge0/submit/', Judge0SubmitView.as_view(), name='judge0-submit'),
-    # 批量提交代码
     path('judge0/batch-submit/', Judge0BatchSubmitView.as_view(), name='judge0-batch-submit'),
-    # 获取提交详情
     path('judge0/submission/<str:token>/', Judge0SubmissionDetailView.as_view(), name='judge0-submission-detail'),
-    # 获取系统信息
     path('judge0/system-info/', Judge0SystemInfoView.as_view(), name='judge0-system-info'),
-    # 健康检查
     path('judge0/health/', Judge0HealthCheckView.as_view(), name='judge0-health'),
-    # 快速运行代码 (简化版)
     path('judge0/run/', Judge0QuickRunView.as_view(), name='judge0-quick-run'),
-    
-    # ==================== Qwen AI 接口 ====================
-    # AI 聊天对话
+
+    # Qwen
     path('ai/chat/', QwenChatView.as_view(), name='qwen-chat'),
-    # AI 代码助手（解释、调试、生成）
     path('ai/code-help/', QwenCodeHelpView.as_view(), name='qwen-code-help'),
-    # AI 翻译
     path('ai/translate/', QwenTranslateView.as_view(), name='qwen-translate'),
-    
-    # ==================== AI 判题接口 ====================
-    # AI 判题提交（标准接口）
+
+    # AI judge
     path('ai/judge/submit/', AIJudgeSubmitView.as_view(), name='ai-judge-submit'),
-    # 一体化判题接口（推荐）
     path('ai/judge/submit-and-complete/', submit_and_complete_problem, name='ai-judge-submit-complete'),
 ]

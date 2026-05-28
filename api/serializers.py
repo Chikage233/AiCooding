@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from datetime import timedelta
 from .models import CustomUser, LeetCodeProblem, ProblemTag, UserActivity, ProblemCompletion
@@ -9,6 +10,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
     """用户注册序列化器"""
     password = serializers.CharField(write_only=True, min_length=8, help_text='密码')
     password_confirm = serializers.CharField(write_only=True, min_length=8, help_text='确认密码')
+    role = serializers.CharField(required=False, write_only=True, default='user', help_text='角色')
     
     class Meta:
         model = CustomUser
@@ -16,46 +18,32 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'username': {'required': True},
             'email': {'required': True},
-            'role': {'required': True},
         }
 
     def validate(self, attrs):
-        # 验证两次密码是否一致
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError("两次输入的密码不一致")
 
-        # 密码强度验证
-        password = attrs['password']
-        if len(password) < 8:
-            raise serializers.ValidationError("密码至少8位")
-        if not any(c.isalpha() for c in password):
-            raise serializers.ValidationError("密码必须包含字母")
-        if not any(c.isdigit() for c in password):
-            raise serializers.ValidationError("密码必须包含数字")
+        requested_role = attrs.get('role', 'user')
+        if requested_role != 'user':
+            raise serializers.ValidationError({'role': "公开注册仅允许普通用户"})
 
-        return attrs
+        validate_password(attrs['password'])
 
-    def create(self, validated_data):
-        # 移除确认密码字段
-        validated_data.pop('password_confirm')
-        # 创建用户
-        user = CustomUser.objects.create_user(**validated_data)
-        return user
-
-    def validate(self, attrs):
-        # 验证两次密码是否一致
-        if attrs['password'] != attrs['password_confirm']:
-            raise serializers.ValidationError("两次输入的密码不一致")
-
-        # 检查用户名是否已存在
         if CustomUser.objects.filter(username=attrs['username']).exists():
             raise serializers.ValidationError("用户名已存在")
 
-        # 检查邮箱是否已存在
         if CustomUser.objects.filter(email=attrs['email']).exists():
             raise serializers.ValidationError("邮箱已被注册")
 
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password_confirm', None)
+        validated_data.pop('role', None)
+        validated_data['role'] = 'user'
+        user = CustomUser.objects.create_user(**validated_data)
+        return user
 
 
 class UserLoginSerializer(serializers.Serializer):
@@ -239,6 +227,29 @@ class LeetCodeProblemListSerializer(serializers.ModelSerializer):
         return 0
 
 # ... existing code ...
+
+class PersonalizedProblemSerializer(LeetCodeProblemListSerializer):
+    """LeetCode personalized practice serializer."""
+
+    recommendation_type = serializers.SerializerMethodField()
+    recommendation_reason = serializers.SerializerMethodField()
+    match_score = serializers.SerializerMethodField()
+
+    class Meta(LeetCodeProblemListSerializer.Meta):
+        fields = LeetCodeProblemListSerializer.Meta.fields + (
+            'recommendation_type',
+            'recommendation_reason',
+            'match_score',
+        )
+
+    def get_recommendation_type(self, obj):
+        return getattr(obj, '_recommendation_type', 'explore')
+
+    def get_recommendation_reason(self, obj):
+        return getattr(obj, '_recommendation_reason', '')
+
+    def get_match_score(self, obj):
+        return getattr(obj, '_recommendation_score', 0.0)
 
 
 

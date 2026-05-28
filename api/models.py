@@ -253,11 +253,11 @@ class EmailVerificationCode(models.Model):
 
     @classmethod
     def generate_code(cls, email):
-        import random
-        import string
+        import secrets
 
-        code = "".join(random.choices(string.digits, k=6))
+        code = "".join(str(secrets.randbelow(10)) for _ in range(6))
         expires_at = timezone.now() + timezone.timedelta(minutes=5)
+        cls.objects.filter(email=email, is_used=False).update(is_used=True)
         return cls.objects.create(
             email=email,
             code=code,

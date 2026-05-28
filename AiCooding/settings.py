@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -39,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_framework_simplejwt.token_blacklist',
     'api',
 ]
 
@@ -148,6 +150,14 @@ CACHES = {
     }
 }
 
+# Email verification security settings
+EMAIL_VERIFICATION_SEND_COOLDOWN_SECONDS = int(os.getenv("EMAIL_VERIFICATION_SEND_COOLDOWN_SECONDS", "60"))
+EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR_PER_EMAIL = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR_PER_EMAIL", "5"))
+EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR_PER_IP = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR_PER_IP", "20"))
+EMAIL_VERIFICATION_VERIFY_WINDOW_SECONDS = int(os.getenv("EMAIL_VERIFICATION_VERIFY_WINDOW_SECONDS", "600"))
+EMAIL_VERIFICATION_MAX_VERIFY_ATTEMPTS_PER_EMAIL = int(os.getenv("EMAIL_VERIFICATION_MAX_VERIFY_ATTEMPTS_PER_EMAIL", "10"))
+EMAIL_VERIFICATION_MAX_VERIFY_ATTEMPTS_PER_IP = int(os.getenv("EMAIL_VERIFICATION_MAX_VERIFY_ATTEMPTS_PER_IP", "30"))
+
 # Celery的Redis配置（同样修正格式）
 CELERY_BROKER_URL = "redis://:redis_2026@127.0.0.1:6379/2"
 CELERY_RESULT_BACKEND = "redis://:redis_2026@127.0.0.1:6379/2"
@@ -207,4 +217,11 @@ SIMPLE_JWT = {
 
 # 自定义用户模型
 AUTH_USER_MODEL = 'api.CustomUser'
-# ... existing code ...
+
+# Qwen AI configuration (read from environment variables).
+QWEN_API_KEY = os.getenv('QWEN_API_KEY', '')
+QWEN_BASE_URL = os.getenv('QWEN_BASE_URL', 'https://dashscope.aliyuncs.com/api/v1')
+QWEN_DEFAULT_MODEL = os.getenv('QWEN_DEFAULT_MODEL', 'qwen-plus')
+QWEN_TIMEOUT = int(os.getenv('QWEN_TIMEOUT', '30'))
+QWEN_MAX_TOKENS = int(os.getenv('QWEN_MAX_TOKENS', '2000'))
+QWEN_TEMPERATURE = float(os.getenv('QWEN_TEMPERATURE', '0.7'))

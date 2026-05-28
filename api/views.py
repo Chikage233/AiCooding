@@ -24,6 +24,13 @@ import logging
 from .nickname_utils import validate_nickname, NICKNAME_DAILY_LIMIT
 from .captcha_utils import create_login_captcha, verify_login_captcha
 from .avatar_presets import get_avatar_presets
+from .email_verification_security import (
+    check_send_code_rate_limit,
+    record_send_code_request,
+    check_verify_code_rate_limit,
+    record_verify_code_failure,
+    clear_verify_code_failures,
+)
 
 logger = logging.getLogger(__name__)
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -1340,9 +1347,22 @@ User = get_user_model()
 class SendVerificationCodeView(APIView):
     """鍙戦€侀偖绠遍獙璇佺爜瑙嗗浘"""
     def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
+        client_ip = request.META.get("REMOTE_ADDR")
+
+        ok, error_code, error_message, error_status = check_send_code_rate_limit(email, client_ip)
+        if not ok:
+            return Response({
+                "code": error_status,
+                "business_code": error_code,
+                "msg": error_message,
+                "data": {}
+            }, status=error_status)
+
         serializer = SendVerificationCodeSerializer(data=request.data)
         if serializer.is_valid():
             result = serializer.save()
+            record_send_code_request(email, client_ip)
             return Response({
                 "code": 200,
                 "msg": "验证码发送成功",
@@ -1358,13 +1378,27 @@ class SendVerificationCodeView(APIView):
 class VerifyCodeView(APIView):
     """Verify email code view."""
     def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
+        client_ip = request.META.get("REMOTE_ADDR")
+
+        ok, error_code, error_message, error_status = check_verify_code_rate_limit(email, client_ip)
+        if not ok:
+            return Response({
+                "code": error_status,
+                "business_code": error_code,
+                "msg": error_message,
+                "data": {}
+            }, status=error_status)
+
         serializer = VerifyCodeSerializer(data=request.data)
         if serializer.is_valid():
+            clear_verify_code_failures(email, client_ip)
             return Response({
                 "code": 200,
                 "msg": "验证码校验成功",
                 "data": {"email": serializer.validated_data['email']}
             })
+        record_verify_code_failure(email, client_ip)
         return Response({
             "code": 400,
             "msg": "验证码校验失败",
@@ -1375,9 +1409,22 @@ class VerifyCodeView(APIView):
 class RegisterWithCodeView(APIView):
     """Register with verification code view."""
     def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
+        client_ip = request.META.get("REMOTE_ADDR")
+
+        ok, error_code, error_message, error_status = check_verify_code_rate_limit(email, client_ip)
+        if not ok:
+            return Response({
+                "code": error_status,
+                "business_code": error_code,
+                "msg": error_message,
+                "data": {}
+            }, status=error_status)
+
         serializer = UserRegisterWithCodeSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            clear_verify_code_failures(email, client_ip)
             return Response({
                 "code": 201,
                 "msg": "娉ㄥ唽鎴愬姛",
@@ -1387,6 +1434,7 @@ class RegisterWithCodeView(APIView):
                     "email": user.email
                 }
             }, status=status.HTTP_201_CREATED)
+        record_verify_code_failure(email, client_ip)
         return Response({
             "code": 400,
             "msg": "娉ㄥ唽澶辫触",
